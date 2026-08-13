@@ -1,4 +1,261 @@
+import pandas as pd
+import sqlite3
 import streamlit as st
+
+st.set_page_config(
+    page_title="Rai Factory - Stock Management", layout="wide", page_icon="📦"
+)
+
+# ---------------------------------------------------------
+# DATABASE SETUP & INITIALIZATION
+# ---------------------------------------------------------
+DB_NAME = "inventory.db"
+
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Poly Inventory
+    cursor.execute(""" CREATE TABLE IF NOT EXISTS poly_inventory ( id INTEGER PRIMARY KEY AUTOINCREMENT, material TEXT NOT NULL, size_spec TEXT NOT NULL, qty_rolls INTEGER DEFAULT 0 ) """)
+
+    # Corrugated Boxes
+    cursor.execute(""" CREATE TABLE IF NOT EXISTS box_inventory ( id INTEGER PRIMARY KEY AUTOINCREMENT, box_spec TEXT NOT NULL, unit TEXT DEFAULT 'Pcs', stock_qty INTEGER DEFAULT 0 ) """)
+
+    # Indicator Colour
+    cursor.execute(""" CREATE TABLE IF NOT EXISTS indicator_inventory ( id INTEGER PRIMARY KEY AUTOINCREMENT, remark TEXT NOT NULL, qty_grams REAL DEFAULT 0.0 ) """)
+
+    # Seed Data
+    cursor.execute("SELECT COUNT(*) FROM poly_inventory")
+    if cursor.fetchone()[0] == 0:
+        poly_initial = [
+            ("Blue Film (46micron)", "410×2500 mtr", 14),
+            ("Blue Film (46micron)", "410×1200 mtr", 4),
+            ("Blue Film (46micron)", "410×1600 mtr", 1),
+            ("Blue Film (46micron)", "410×1500 mtr", 1),
+            ("Blue Film (46micron)", "310×2100 mtr", 3),
+            ("Blue Film (46micron)", "360×2100 mtr", 11),
+            ("Blue Film (46micron)", "510×2000 mtr", 7),
+            ("Blue Film (46micron)", "510×1700 mtr", 2),
+            ("Blue Film (46micron)", "510×1550 mtr", 16),
+            ("Blue Film (46micron)", "610×1350 mtr", 37),
+            ("Blue Film (46micron)", "930×1600 mtr", 5),
+            ("Blue Film (46micron)", "930×1370 mtr", 1),
+            ("Blue Film (46micron)", "930×790 mtr", 1),
+            ("Tyvek Film", "930×2200 mtr", 1),
+            ("White Film (62micron)", "410×1285 mtr", 7),
+            ("White Film (62micron)", "510×1285 mtr", 7),
+            ("White Film (46micron)", "570×1950 mtr", 2),
+            ("White Film (46micron)", "570×1750 mtr", 6),
+            ("White Film (46micron)", "570×1600 mtr", 2),
+            ("White Film (46micron)", "410×2080 mtr", 13),
+            ("White Film (46micron)", "610×1480 mtr", 13),
+            ("White Film (46micron)", "1000×1700 mtr", 6),
+            ("Tyvek Film", "840×3000 mtr", 0),
+        ]
+        cursor.executemany(
+            "INSERT INTO poly_inventory (material, size_spec, qty_rolls) VALUES (?, ?, ?)",
+            poly_initial,
+        )
+
+    cursor.execute("SELECT COUNT(*) FROM box_inventory")
+    if cursor.fetchone()[0] == 0:
+        box_initial = [
+            ("Ayka Small Printed Reel Box (44*23*32)", "Pcs", 654),
+            ("Ayka Large Printed Reel Box (44*23*42)", "Pcs", 420),
+            ("Ayka Large printed wrap Box (44*23*42)", "Pcs", 0),
+            ("Bowie Dick Inner box", "Pcs", 11863),
+            ("Bowie Dick Outer Box", "Pcs", 14490),
+            ("Plain Bowie Dick Master Carton Box (26*24*14)", "Pcs", 540),
+            ("Plain Master Carton Box for face mask (50*20*56)", "Pcs", 159),
+            ("Plain small Pouch box (34*23*29)", "Pcs", 425),
+            ("Plain small Autoclave box (28*26*28)", "Pcs", 380),
+            ("Plain small reel box (44*23*32)", "Pcs", 524),
+            ("Indicator Master Carton Box (21*18*11.5)", "Pcs", 600),
+        ]
+        cursor.executemany(
+            "INSERT INTO box_inventory (box_spec, unit, stock_qty) VALUES (?, ?, ?)",
+            box_initial,
+        )
+
+    cursor.execute("SELECT COUNT(*) FROM indicator_inventory")
+    if cursor.fetchone()[0] == 0:
+        indicator_initial = [
+            ("LABEL (Brown)", 4734.0),
+            ("REEL (Brown)", 7220.0),
+            ("TYVEK REEL", 1300.0),
+            ("LABEL", 700.0),
+            ("LABEL", 13900.0),
+            ("INDICATOR", 8700.0),
+            ("REEL", 1260.0),
+            ("INDICATOR / BD T...", 5700.0),
+            ("INDICATOR (Red)", 990.0),
+        ]
+        cursor.executemany(
+            "INSERT INTO indicator_inventory (remark, qty_grams) VALUES (?, ?)",
+            indicator_initial,
+        )
+
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+# ---------------------------------------------------------
+# APP INTERFACE
+# ---------------------------------------------------------
+st.title("🏭 Rai Factory - Complete Stock Management")
+st.markdown("---")
+
+tab1, tab2, tab3, tab4 = st.tabs(
+    [
+        "1. Poly Inventory",
+        "2. Corrugated Boxes",
+        "3. Indicator Colour",
+        "⚡ Stock Transactions (IN/OUT)",
+    ]
+)
+
+# Poly Tab
+with tab1:
+    st.subheader("Poly Inventory Stock")
+    search_poly = st.text_input(
+        "🔍 Search Poly Material / Specification:", key="poly_search"
+    )
+
+    conn = get_db_connection()
+    if search_poly:
+        query = "SELECT id, material AS 'Material', size_spec AS 'Size / Specification', qty_rolls AS 'Qty (Rolls)' FROM poly_inventory WHERE material LIKE ? OR size_spec LIKE ?"
+        df_poly = pd.read_sql_query(
+            query, conn, params=(f"%{search_poly}%", f"%{search_poly}%")
+        )
+    else:
+        df_poly = pd.read_sql_query(
+            "SELECT id, material AS 'Material', size_spec AS 'Size / Specification', qty_rolls AS 'Qty (Rolls)' FROM poly_inventory",
+            conn,
+        )
+    conn.close()
+
+    st.dataframe(df_poly.drop(columns=["id"]), use_container_width=True)
+    st.metric("Total Poly Rolls", int(df_poly["Qty (Rolls)"].sum()))
+
+# Box Tab
+with tab2:
+    st.subheader("Corrugated Boxes & Core Inventory")
+    search_box = st.text_input(
+        "🔍 Search Box Specification:", key="box_search"
+    )
+
+    conn = get_db_connection()
+    if search_box:
+        query = "SELECT id, box_spec AS 'Box Type & Specifications', unit AS 'Unit', stock_qty AS 'Stock Qty' FROM box_inventory WHERE box_spec LIKE ?"
+        df_box = pd.read_sql_query(query, conn, params=(f"%{search_box}%",))
+    else:
+        df_box = pd.read_sql_query(
+            "SELECT id, box_spec AS 'Box Type & Specifications', unit AS 'Unit', stock_qty AS 'Stock Qty' FROM box_inventory",
+            conn,
+        )
+    conn.close()
+
+    st.dataframe(df_box.drop(columns=["id"]), use_container_width=True)
+    st.metric("Total Corrugated Boxes (Pcs)", int(df_box["Stock Qty"].sum()))
+
+# Indicator Tab
+with tab3:
+    st.subheader("Indicator Colour (Grams)")
+    conn = get_db_connection()
+    df_ind = pd.read_sql_query(
+        "SELECT id, remark AS 'Remark / Type', qty_grams AS 'Quantity (grams)' FROM indicator_inventory",
+        conn,
+    )
+    conn.close()
+
+    st.dataframe(df_ind.drop(columns=["id"]), use_container_width=True)
+    total_grams = df_ind["Quantity (grams)"].sum()
+    col1, col2 = st.columns(2)
+    col1.metric("Total Weight (Grams)", f"{total_grams:,.0f} g")
+    col2.metric("Total Weight (KG)", f"{total_grams / 1000:,.2f} kg")
+
+# Update Tab
+with tab4:
+    st.subheader("Update Inventory Quantities")
+    category = st.radio(
+        "Select Section to Update:",
+        ["Poly Inventory", "Corrugated Boxes", "Indicator Colour"],
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if category == "Poly Inventory":
+        items = pd.read_sql_query(
+            "SELECT id, material || ' | ' || size_spec AS label FROM poly_inventory",
+            conn,
+        )
+        selected = st.selectbox("Select Item", items["label"])
+        selected_id = items[items["label"] == selected]["id"].values[0]
+
+        action = st.radio("Action", ["Stock IN (+)", "Stock OUT (-)"])
+        qty = st.number_input("Rolls Quantity", min_value=1, step=1)
+
+        if st.button("Update Poly Stock"):
+            op = "+" if action == "Stock IN (+)" else "-"
+            cursor.execute(
+                f"UPDATE poly_inventory SET qty_rolls = MAX(0, qty_rolls {op} ?) WHERE id = ?",
+                (qty, selected_id),
+            )
+            conn.commit()
+            st.success("Poly stock updated successfully!")
+            st.rerun()
+
+    elif category == "Corrugated Boxes":
+        items = pd.read_sql_query(
+            "SELECT id, box_spec FROM box_inventory", conn
+        )
+        selected = st.selectbox("Select Box Item", items["box_spec"])
+        selected_id = items[items["box_spec"] == selected]["id"].values[0]
+
+        action = st.radio("Action", ["Stock IN (+)", "Stock OUT (-)"])
+        qty = st.number_input("Pcs Quantity", min_value=1, step=1)
+
+        if st.button("Update Box Stock"):
+            op = "+" if action == "Stock IN (+)" else "-"
+            cursor.execute(
+                f"UPDATE box_inventory SET stock_qty = MAX(0, stock_qty {op} ?) WHERE id = ?",
+                (qty, selected_id),
+            )
+            conn.commit()
+            st.success("Box stock updated successfully!")
+            st.rerun()
+
+    elif category == "Indicator Colour":
+        items = pd.read_sql_query(
+            "SELECT id, remark FROM indicator_inventory", conn
+        )
+        selected = st.selectbox("Select Indicator Type", items["remark"])
+        selected_id = items[items["remark"] == selected]["id"].values[0]
+
+        action = st.radio("Action", ["Stock IN (+)", "Stock OUT (-)"])
+        qty = st.number_input("Grams Quantity", min_value=1.0, step=10.0)
+
+        if st.button("Update Indicator Stock"):
+            op = "+" if action == "Stock IN (+)" else "-"
+            cursor.execute(
+                f"UPDATE indicator_inventory SET qty_grams = MAX(0, qty_grams {op} ?) WHERE id = ?",
+                (qty, selected_id),
+            )
+            conn.commit()
+            st.success("Indicator colour stock updated successfully!")
+            st.rerun()
+
+    conn.close()import streamlit as st
 import pandas as pd
 import sqlite3
 
